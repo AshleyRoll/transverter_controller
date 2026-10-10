@@ -25,7 +25,7 @@ Then install `rshell` using your `pipx install rshell`
 
 ```sh
 $ rshell -p /dev/ttyACM0
-> cp -r * /pyboard
+> rsync . /pyboard
 ```
 
 Basically, copy the `main.py` and the contents of the `lib` onto the Pico.
