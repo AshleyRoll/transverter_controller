@@ -4,80 +4,47 @@ import machine
 import micropython
 
 from input_helpers import input_mhz
-from max2870 import MAX2870
-from config import Config
+from pll import Pll
 from pixel import Pixel, Colour
-
-# Disable Ctrl+C from breaking into REPL while our loop handles it
-#micropython.kbd_intr(-1)
-
-     
-def calculate_pll_frequency():
-    global config
-    return (config.rf_f-config.if_f) / 2.0
-
-config = Config.load_from_file()
-pll_f = 0.0
-pll_enabled = False
 
 pixel = Pixel(scale=0.2)
 
-def update_pll(enable):
-    global pll_f
-    pll_f = calculate_pll_frequency()
-    pll.set_frequency(pll_f * 1_000_000, optimize_r=True)
-    if enable:
-        pll.set_output(rfa=True, apwr=3)
-        pll.begin()
+def pll_updated(enabled, config):
+    if enabled:
         pixel.colour(Colour.GREEN)
     else:
-        pll.set_output(rfa=False, apwr=0)
-        pll.power_down()
         pixel.colour(Colour.BLACK)
 
-
-# initial setup and enable PLL
-pll = MAX2870(spi_id=0, sck=6, mosi=7, le=5, ce=3)
-pll.set_reference(config.pll_ref_f * 1_000_000)
-update_pll(True)
-pll_enabled = True
-
+pll = Pll(pll_updated)
 
 # -------------------------------------------------------------
 # MENU ACTIONS
 # -------------------------------------------------------------
 
 def toggle_pll_enable():
-    global pll_enabled
-    pll_enabled = not pll_enabled
-    update_pll(pll_enabled) 
+    global pll
+    pll.toggle_enable()
 
 def change_rf_frequency():
-    global config
-    freq = input_mhz(f"RF Output ({config.rf_min}-{config.rf_max}MHz): ", val=config.rf_f)
-    if freq < config.rf_min or freq > config.rf_max:
+    global pll
+    freq = input_mhz(f"RF Output ({pll.config.rf_min}-{pll.config.rf_max}MHz): ", val=pll.config.rf_f)
+    if freq < pll.config.rf_min or freq > pll.config.rf_max:
         print("out of range")
     else:
-        config.rf_f = freq
-        update_pll(pll_enabled)
-        config.save_to_file()
+        pll.change_rf_frequency(freq)
 
 def change_if_frequency():
-    global config
-    freq = input_mhz(f"IF Input ({config.if_min}-{config.if_max}MHz): ", val=config.if_f)
-    if freq < config.if_min or freq > config.if_max:
+    global pll
+    freq = input_mhz(f"IF Input ({pll.config.if_min}-{pll.config.if_max}MHz): ", val=pll.config.if_f)
+    if freq < pll.config.if_min or freq > pll.config.if_max:
         print("out of range")
     else:
-        config.if_f = freq
-        update_pll(pll_enabled)
-        config.save_to_file()
+        pll.change_if_frequency(freq)
 
 def reset_config():
-    global config
+    global pll
     print("\r\nLoading configuration defaults...")
-    config = Config()
-    config.save_to_file()
-    update_pll(pll_enabled)
+    pll.reset_config()
 
 
 # -------------------------------------------------------------
@@ -88,15 +55,14 @@ menu_items = {
     b"r": ("Change RF Frequency", change_rf_frequency),
     b"i": ("Change IF Frequency", change_if_frequency),
     b"c": ("Reset Config", reset_config),
-
 }
 
 def print_menu():
-    global config
+    global pll
     # \r\n ensures formatting is completely pristine in minicom
     print("\r\n\r\n" + "="*30)
-    print(f" PLL: { pll_f }MHz Enabled: { pll_enabled }")
-    print(f" RF: { config.rf_f }MHz IF: { config.if_f }MHz")
+    print(f" PLL: { pll.pll_f }MHz Enabled: { pll.enabled }")
+    print(f" RF: { pll.config.rf_f }MHz IF: { pll.config.if_f }MHz")
     print("="*30)
     for key, (description, _) in sorted(menu_items.items()):
         print(f" [{key.decode()}] {description}")
