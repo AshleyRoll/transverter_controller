@@ -100,17 +100,17 @@ def toggle_pll_enable():
     global pll
     pll.toggle_enable()
 
-def change_rf_frequency():
+async def change_rf_frequency():
     global pll
-    freq = input_mhz(f"RF Output ({pll.config.rf_min}-{pll.config.rf_max}MHz): ", val=pll.config.rf_f)
+    freq = await input_mhz(f"RF Output ({pll.config.rf_min}-{pll.config.rf_max}MHz): ", val=pll.config.rf_f)
     if freq < pll.config.rf_min or freq > pll.config.rf_max:
         print("out of range")
     else:
         pll.change_rf_frequency(freq)
 
-def change_if_frequency():
+async def change_if_frequency():
     global pll
-    freq = input_mhz(f"IF Input ({pll.config.if_min}-{pll.config.if_max}MHz): ", val=pll.config.if_f)
+    freq = await input_mhz(f"IF Input ({pll.config.if_min}-{pll.config.if_max}MHz): ", val=pll.config.if_f)
     if freq < pll.config.if_min or freq > pll.config.if_max:
         print("out of range")
     else:
@@ -130,10 +130,10 @@ def make_safe():
 # CONFIG & DISPLAY
 # -------------------------------------------------------------
 menu_items = {
-    b"e": ("Toggle PLL Enable", toggle_pll_enable),
-    b"r": ("Change RF Frequency", change_rf_frequency),
-    b"i": ("Change IF Frequency", change_if_frequency),
-    b"c": ("Reset Config", reset_config),
+    b"e": ("Toggle PLL Enable", toggle_pll_enable, False),
+    b"r": ("Change RF Frequency", change_rf_frequency, True),
+    b"i": ("Change IF Frequency", change_if_frequency, True),
+    b"c": ("Reset Config", reset_config, False),
 }
 
 def print_menu():
@@ -142,7 +142,7 @@ def print_menu():
     print(f" PLL: { pll.pll_f }MHz Enabled: { pll.enabled }")
     print(f" RF: { pll.config.rf_f }MHz IF: { pll.config.if_f }MHz")
     print("="*30)
-    for key, (description, _) in sorted(menu_items.items()):
+    for key, (description, _, _) in sorted(menu_items.items()):
         print(f" [{key.decode()}] {description}")
     print("\r\n [q] Exit to MicroPython REPL")
     print("="*30)
@@ -168,8 +168,15 @@ async def menu_loop():
             make_safe()
             raise MenuExitException
         elif char in menu_items:
-            action_func = menu_items[char][1]
-            action_func()
+            action = menu_items[char]
+            action_func = action[1]
+            is_async = action[2]
+
+            if is_async:
+                await action_func()
+            else:
+                action_func()
+
             print_menu()
         elif char in [b'\r', b'\n']:
             continue
