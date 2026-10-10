@@ -29,13 +29,17 @@ pll = Pll(pll_updated)
 # -------------------------------------------------------------
 # PTT outputs
 # -------------------------------------------------------------
+is_tx_mode = False
+
 def tx_mode():
-    global tx_enable, pixel
+    global tx_enable, pixel, is_tx_mode
     pixel.colour(Colour.RED)
     tx_enable.value(1)
+    is_tx_mode = True
+    print_live_status()
 
 def rx_mode():
-    global tx_enable, pixel, pll
+    global tx_enable, pixel, pll, is_tx_mode
 
     if pll.enabled:
         pixel.colour(Colour.GREEN)
@@ -43,6 +47,8 @@ def rx_mode():
         pixel.colour(Colour.BLACK)
 
     tx_enable.value(0)
+    is_tx_mode = False
+    print_live_status()
 
 def radio_tx():
     global radio_ptt_out
@@ -99,6 +105,9 @@ async def dummy_worker():
 def toggle_pll_enable():
     global pll
     pll.toggle_enable()
+    print_pll_status()
+
+    return False # no repaint needed
 
 async def change_rf_frequency():
     global pll
@@ -108,6 +117,8 @@ async def change_rf_frequency():
     else:
         pll.change_rf_frequency(freq)
 
+    return True # repaint menu
+
 async def change_if_frequency():
     global pll
     freq = await input_mhz(f"IF Input ({pll.config.if_min}-{pll.config.if_max}MHz): ", val=pll.config.if_f)
@@ -116,10 +127,14 @@ async def change_if_frequency():
     else:
         pll.change_if_frequency(freq)
 
+    return True # repaint menu
+
 def reset_config():
     global pll
     print("\r\nLoading configuration defaults...")
     pll.reset_config()
+
+    return True # repaint menu
 
 def make_safe():
     radio_rx()
@@ -137,17 +152,39 @@ menu_items = {
 }
 
 def print_menu():
-    global pll
-    print("\r\n\r\n" + "="*30)
-    print(f" PLL: { pll.pll_f }MHz Enabled: { pll.enabled }")
-    print(f" RF: { pll.config.rf_f }MHz IF: { pll.config.if_f }MHz")
-    print("="*30)
+    global pll, current_mode
+    # \x1b[H moves cursor to row 1, col 1. \x1b[J clears everything below it.
+    print("\x1b[H\x1b[J", end="")
+    print("=" * 40)
+
+    print(f" STATUS:     ")
+    print(f" PLL Enabled:       ")
+    print(f" RF Freq: {pll.config.rf_f} MHz")
+    print(f" IF Freq: {pll.config.if_f} MHz")
+    print(f" PLL Freq: {pll.pll_f} MHz")
+    print("=" * 40)
     for key, (description, _, _) in sorted(menu_items.items()):
         print(f" [{key.decode()}] {description}")
-    print("\r\n [q] Exit to MicroPython REPL")
-    print("="*30)
-    print("Enter choice: ", end="")
+    print(" [q] Exit to MicroPython REPL")
+    print("=" * 40)
+    print_live_status()
+    print_pll_status()
 
+def print_live_status():
+    global is_tx_mode
+    # \x1b7      - Captures the user's exact current cursor position in terminal memory
+    # \x1b[2;10H - Jumps directly to Row 2, Column 10 to write the live flag
+    # \x1b[K     - Clears the rest of that specific line segment (removes old trailing text)
+    # \x1b8      - Instantly drops the user back to exactly where they were typing
+    mode_color = "\x1b[1;31m" if is_tx_mode else "\x1b[1;32m"
+    mode_name = "TX" if is_tx_mode else "RX"
+    print(f"\x1b7\x1b[2;10H{mode_color}[{mode_name}]\x1b[0m\x1b[K\x1b8", end="")
+
+def print_pll_status():
+    global pll
+    mode_color = "\x1b[1;32m" if pll.enabled else "\x1b[1;31m"
+    mode_name = "On" if pll.enabled else "Off"
+    print(f"\x1b7\x1b[3;15H{mode_color}[{mode_name}]\x1b[0m\x1b[K\x1b8", end="")
 # -------------------------------------------------------------
 # MENU SYSTEM TASK
 # -------------------------------------------------------------
@@ -173,11 +210,12 @@ async def menu_loop():
             is_async = action[2]
 
             if is_async:
-                await action_func()
+                repaint = await action_func()
             else:
-                action_func()
+                repaint = action_func()
 
-            print_menu()
+            if repaint:
+                print_menu()
         elif char in [b'\r', b'\n']:
             continue
         else:
